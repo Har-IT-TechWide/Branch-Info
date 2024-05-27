@@ -11,9 +11,7 @@ jobs:
     strategy:
       matrix:
         repo: [ 
-          'https://github.com/user/repo1.git',
-          'https://github.com/user/repo2.git',
-          'https://github.com/user/repo3.git'
+          'https://github.com/Har-IT-TechWide/K8s.git',
         ]
 
     steps:
