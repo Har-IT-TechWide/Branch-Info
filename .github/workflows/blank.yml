@@ -10,16 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        repo: [ 
-          'https://github.com/Har-IT-TechWide/K8s.git',
+        repo: [
+          'Har-IT-TechWide/K8s',
         ]
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
-      with:
-        repository: ${{ matrix.repo }}
-        path: repo-${{ matrix.repo }}
+      run: |
+        git clone https://github.com/${{ matrix.repo }} repo-${{ matrix.repo }}
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -41,7 +39,7 @@ jobs:
         path: branch_report_${{ matrix.repo }}.xlsx
 
     - name: Send email with reports
-      if: ${{ matrix.repo == 'https://github.com/user/repo3.git' }}  # Only send email after the last repo is processed
+      if: ${{ matrix.repo == 'user/repo3' }}  # Only send email after the last repo is processed
       uses: dawidd6/action-send-mail@v3
       with:
         server_address: smtp.example.com
