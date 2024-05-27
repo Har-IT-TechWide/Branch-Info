@@ -12,10 +12,16 @@ jobs:
       matrix:
         repo: [
           'Har-IT-TechWide/K8s',
+          'user/repo2',
+          'user/repo3'
         ]
 
     steps:
-    - name: Checkout repository
+    - name: Set up Git
+      run: |
+        git config --global url."https://${{ secrets.GH_PAT }}:x-oauth-basic@github.com/".insteadOf "https://github.com/"
+
+    - name: Clone repository
       run: |
         git clone https://github.com/${{ matrix.repo }} repo-${{ matrix.repo }}
 
@@ -36,7 +42,7 @@ jobs:
       uses: actions/upload-artifact@v3
       with:
         name: branch-report-${{ matrix.repo }}
-        path: branch_report_${{ matrix.repo }}.xlsx
+        path: branch_report_${{ matrix.repo.replace('/', '_') }}.xlsx
 
     - name: Send email with reports
       if: ${{ matrix.repo == 'user/repo3' }}  # Only send email after the last repo is processed
