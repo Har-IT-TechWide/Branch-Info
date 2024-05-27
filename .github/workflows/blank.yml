@@ -1,0 +1,56 @@
+name: Generate Branch Reports
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'  # Runs every Sunday at midnight
+
+jobs:
+  generate-reports:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        repo: [ 
+          'https://github.com/user/repo1.git',
+          'https://github.com/user/repo2.git',
+          'https://github.com/user/repo3.git'
+        ]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        repository: ${{ matrix.repo }}
+        path: repo-${{ matrix.repo }}
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install openpyxl
+
+    - name: Generate Excel report
+      run: python generate_report.py ${{ matrix.repo }} repo-${{ matrix.repo }}
+
+    - name: Upload report as artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: branch-report-${{ matrix.repo }}
+        path: branch_report_${{ matrix.repo }}.xlsx
+
+    - name: Send email with reports
+      if: ${{ matrix.repo == 'https://github.com/user/repo3.git' }}  # Only send email after the last repo is processed
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: smtp.example.com
+        server_port: 587
+        username: ${{ secrets.SMTP_USERNAME }}
+        password: ${{ secrets.SMTP_PASSWORD }}
+        subject: Branch Reports
+        body: The branch reports are attached.
+        to: your-email@example.com
+        attachments: branch_report_*.xlsx
