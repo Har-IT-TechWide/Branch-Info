@@ -3,7 +3,7 @@ name: Generate Branch Reports
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0 * * 0'  # Runs every Sunday at midnight
+    # - cron: '0 0 * * 0'  # Runs every Sunday at midnight
 
 jobs:
   generate-reports:
