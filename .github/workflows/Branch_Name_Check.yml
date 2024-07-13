@@ -3,8 +3,7 @@ name: Branch Name Check
 on:
   push:
     branches:
-      - 'main'
-      - 'develop'
+      - '**'
 
 jobs:
   branch-name-check:
