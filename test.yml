@@ -1,0 +1,122 @@
+name: Build and Publish Snapshot
+
+on:
+  push:
+    branches:
+      - 'master'
+      - 'develop'
+      - 'feature/US*'
+
+permissions:
+  actions: read
+  checks: read
+  contents: write # Updated to allow writing version changes to `pom.xml`
+  deployments: read
+  id-token: write
+  packages: read
+  pages: read
+  pull-requests: write
+
+env:
+  # COMMON ENVIRONMENT CONFIGS
+  JAVA_VERSION: '17'
+  ARTIFACTORY_REPO: 'UHG-Snapshots/com/optum/uhcpng/jarlib'
+  ARTIFACTORY_PROD_REPO: 'UHG-Releases/com/optum/uhcpng/jarlib'
+  JAR_NAME: 'uhcpng-membersearch-lib'
+  JF_URL: "https://repo1.uhc.com/"
+
+jobs:
+  build_jar:
+    runs-on: [uhg-runner]
+
+    name: Build and Deployment
+    steps:
+      - name: Checkout GitHub Actions Repo
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Setup Build Configs and Release Version
+        run: |
+          echo "Extracting build configurations..."
+          
+          VERSION=$(grep "^artifact_version" gradle.properties | sed -E "s/artifact_version\s*=\s*['\"]?([^'\"]+)['\"]?/\1/")
+          GROUP_ID=$(grep "^group" build.gradle | sed -E "s/group\\s*=\\s*['\"]([^'\"]+)['\"]/\1/")
+
+          if [ -f settings.gradle ]; then
+            ARTIFACT_ID=$(grep "^rootProject.name" settings.gradle | sed -E "s/rootProject.name\\s*=\\s*['\"]([^'\"]+)['\"]/\1/")
+          fi
+          if [ -z "$ARTIFACT_ID" ]; then
+            ARTIFACT_ID=$(basename "$PWD")
+          fi
+
+          echo "VERSION=$VERSION" >> $GITHUB_ENV  
+          echo "GROUP_ID=$GROUP_ID" >> $GITHUB_ENV  
+          echo "ARTIFACT_ID=$ARTIFACT_ID" >> $GITHUB_ENV  
+          
+          BRANCH_NAME=$(echo ${GITHUB_REF#refs/heads/} | sed 's/\//-/g')
+          if [ "${BRANCH_NAME}" = 'develop' ]; then
+              SNAPSHOT_VERSION="${VERSION}-SNAPSHOT"
+          else    
+              SNAPSHOT_VERSION="${VERSION}-${BRANCH_NAME}-SNAPSHOT"  
+          fi  
+          RELEASE_VERSION="${VERSION}"  
+
+          echo "SNAPSHOT_VERSION=$SNAPSHOT_VERSION" >> $GITHUB_ENV  
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> $GITHUB_ENV
+
+      - name: Update Version in POM
+        run: |
+          SNAPSHOT_VERSION=${{ env.SNAPSHOT_VERSION }}
+          GROUP_ID=${{ env.GROUP_ID }}
+
+          xmlstarlet ed \
+            -N x="http://maven.apache.org/POM/4.0.0" \
+            -u "/x:project/x:dependencies/x:dependency[x:groupId='$GROUP_ID']/x:version" \
+            -v "$SNAPSHOT_VERSION" \
+            pom.xml > pom_updated.xml
+
+          mv pom_updated.xml pom.xml
+
+      - name: Build Jar
+        run: |
+          ./gradlew clean build generatePomFileForMavenJavaPublication
+
+      - name: Gradle Build Scan
+        uses: ./.github/actions/lib-sonar-action
+        with:
+          enable-sonar: false
+          sonar-project-key: com.optum.uhcp.eligibility:uhcpng-membersearch-lib
+          sonar-token: ${{ secrets.SONAR_TOKEN }}
+
+      - name: Set up JFrog CLI
+        uses: uhg-actions/setup-jfrog-cli@v3
+        env:
+          JF_URL: ${{ env.JF_URL }}
+          JF_ENV_1: ${{ secrets.JF_ACCESS_TOKEN }}
+
+      - name: Publish to Artifactory
+        run: |
+          if [ "${BRANCH_NAME}" = 'develop' ]; then
+            jfrog rt u ./build/libs/*.jar ${{ env.ARTIFACTORY_REPO }}/${{ env.JAR_NAME }}/${{ env.SNAPSHOT_VERSION }}/${{ env.JAR_NAME }}-${{ env.VERSION }}.jar
+          elif [ "${BRANCH_NAME}" = 'master' ]; then
+            jfrog rt u ./build/libs/*.jar ${{ env.ARTIFACTORY_PROD_REPO }}/${{ env.JAR_NAME }}/${{ env.RELEASE_VERSION }}/${{ env.JAR_NAME }}-${{ env.VERSION }}.jar
+          else
+            echo "Invalid branch for deployment"
+          fi
+
+      - name: Create Release and Tag
+        if: github.ref == 'refs/heads/master' && success()
+        env:
+          GH_TOKEN: ${{ secrets.UHCP_SVC_PAT }}
+        run: |
+          gh release create ${{ env.RELEASE_VERSION }} --title "Release ${{ env.RELEASE_VERSION }}" --notes "Release ${{ env.RELEASE_VERSION }}"
+          git tag ${{ env.RELEASE_VERSION }}
+          echo "Release ${{ env.RELEASE_VERSION }} created and tagged"
